@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BAR KIOSK</title>
+  <style>
+    * { box-sizing: border-box; font-family: Arial, "Noto Sans KR", sans-serif; }
+    body { margin: 0; background: #111; color: #f5f5f5; }
+    .app { max-width: 1050px; margin: 0 auto; min-height: 100vh; padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #444; padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 34px; letter-spacing: 2px; }
+    h2 { margin-top: 0; }
+    .badge { padding: 8px 12px; border: 1px solid #888; border-radius: 999px; font-size: 14px; color: #ddd; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    .card { background: #1b1b1b; border: 1px solid #333; border-radius: 18px; padding: 24px; margin-bottom: 18px; }
+    .center { text-align: center; }
+    .sub { color: #bbb; line-height: 1.6; }
+    button { border: 0; border-radius: 12px; padding: 14px 18px; margin: 6px; cursor: pointer; font-size: 16px; font-weight: 700; background: #f2c94c; color: #111; }
+    button.secondary { background: #333; color: #f5f5f5; border: 1px solid #555; }
+    button.danger { background: #d9534f; color: white; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    input, select { width: 100%; padding: 14px; margin: 8px 0 14px; border-radius: 12px; border: 1px solid #555; background: #222; color: #fff; font-size: 16px; }
+    label { color: #ddd; font-size: 15px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+    .seat, .menu-item { background: #202020; border: 1px solid #3c3c3c; border-radius: 16px; padding: 18px; transition: 0.2s; }
+    .seat { cursor: pointer; text-align: center; }
+    .seat.available:hover, .menu-item:hover { border-color: #f2c94c; transform: translateY(-2px); }
+    .seat.selected { border: 2px solid #f2c94c; background: #3a3217; }
+    .seat.used { opacity: 0.4; cursor: not-allowed; }
+    .category { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+    .menu-item h3 { margin: 0 0 8px; }
+    .price { color: #f2c94c; font-weight: 800; margin-top: 8px; }
+    .cart-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; border-bottom: 1px solid #333; padding: 12px 0; }
+    .total { font-size: 24px; font-weight: 800; color: #f2c94c; text-align: right; margin-top: 16px; }
+    .status-box { border-left: 5px solid #f2c94c; padding: 14px; background: #222; margin: 12px 0; font-size: 22px; font-weight: 800; }
+    .admin-table { width: 100%; border-collapse: collapse; }
+    .admin-table th, .admin-table td { border-bottom: 1px solid #333; padding: 12px; text-align: left; }
+    .small { font-size: 13px; color: #aaa; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>BAR KIOSK</h1>
+        <div class="small">술집 바 주문·좌석·결제 키오스크 데모</div>
+      </div>
+      <div class="badge" id="sessionInfo">비회원</div>
+    </header>
+
+    <section id="welcome" class="screen active">
+      <div class="card center">
+        <h2>어서오세요 🍸</h2>
+        <p class="sub">이 키오스크는 성인 손님을 위한 바 주문 시스템입니다.<br>주문 전 연령 확인을 진행합니다.</p>
+        <button onclick="go('age')">시작하기</button>
+        <button class="secondary" onclick="go('admin')">관리자 모드</button>
+      </div>
+    </section>
+
+    <section id="age" class="screen">
+      <div class="card">
+        <h2>1. 연령 확인</h2>
+        <p class="sub">실제 서비스에서는 신분증 스캔, 휴대폰 인증, 얼굴 인식 API 등을 연동합니다. 여기서는 데모로 출생연도를 입력합니다.</p>
+        <label>출생연도 입력</label>
+        <input id="birthYear" type="number" placeholder="예: 2000">
+        <button onclick="verifyAge()">연령 확인</button>
+        <button class="secondary" onclick="go('welcome')">뒤로</button>
+        <p id="ageMessage" class="sub"></p>
+      </div>
+    </section>
+
+    <section id="login" class="screen">
+      <div class="card">
+        <h2>2. 로그인 / 비회원 주문</h2>
+        <p class="sub">회원은 포인트 적립과 쿠폰 사용이 가능하고, 비회원도 주문은 가능합니다.</p>
+        <label>휴대폰 번호 또는 이메일</label>
+        <input id="loginId" placeholder="예: 01012345678">
+        <button onclick="login()">간단 로그인</button>
+        <button class="secondary" onclick="guestLogin()">비회원으로 진행</button>
+      </div>
+    </section>
+
+    <section id="seat" class="screen">
+      <div class="card">
+        <h2>3. 좌석 선택</h2>
+        <p class="sub">바 좌석, 테이블, 스탠딩 좌석 중 현재 사용 가능한 자리를 선택합니다.</p>
+        <div id="seatGrid" class="grid"></div>
+        <button onclick="confirmSeat()">좌석 확정</button>
+        <button class="secondary" onclick="go('menu')">건너뛰고 주문</button>
+      </div>
+    </section>
+
+    <section id="menu" class="screen">
+      <div class="card">
+        <h2>4. 메뉴 탐색 및 주문</h2>
+        <div class="category" id="categoryButtons"></div>
+        <div id="menuGrid" class="grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>장바구니</h2>
+        <div id="cartList"></div>
+        <div class="total" id="cartTotal">총 0원</div>
+        <button onclick="go('checkout')" id="checkoutBtn" disabled>결제하기</button>
+        <button class="secondary" onclick="go('seat')">좌석 다시 선택</button>
+      </div>
+    </section>
+
+    <section id="checkout" class="screen">
+      <div class="card">
+        <h2>5. 결제</h2>
+        <p class="sub">실제 서비스에서는 PG사, 카드 단말기, NFC 모듈과 연동합니다.</p>
+        <label>결제 방식</label>
+        <select id="paymentMethod">
+          <option>카드 결제</option>
+          <option>NFC / 모바일 페이</option>
+          <option>포인트 결제</option>
+          <option>현장 결제</option>
+        </select>
+        <button onclick="pay()">결제 실행</button>
+        <button class="secondary" onclick="go('menu')">주문 수정</button>
+      </div>
+    </section>
+
+    <section id="status" class="screen">
+      <div class="card center">
+        <h2>6. 주문 상태</h2>
+        <p id="orderNumber" class="sub"></p>
+        <div class="status-box" id="orderStatus">주문 접수</div>
+        <button onclick="nextStatus()">상태 업데이트 데모</button>
+        <button class="secondary" onclick="newOrder()">새 주문하기</button>
+      </div>
+    </section>
+
+    <section id="admin" class="screen">
+      <div class="card">
+        <h2>관리자 모드</h2>
+        <p class="sub">사장님/직원은 주문 처리, 재고, 메뉴, 판매 통계를 관리합니다.</p>
+        <label>관리자 비밀번호</label>
+        <input id="adminPw" type="password" placeholder="demo 입력">
+        <button onclick="adminLogin()">관리자 로그인</button>
+        <button class="secondary" onclick="go('welcome')">돌아가기</button>
+      </div>
+
+      <div class="card" id="adminPanel" style="display:none;">
+        <h2>주문 관리</h2>
+        <table class="admin-table">
+          <thead>
+            <tr><th>주문번호</th><th>좌석</th><th>메뉴</th><th>상태</th></tr>
+          </thead>
+          <tbody id="adminOrders"></tbody>
+        </table>
+        <p class="small">데모 버전이라 새로고침하면 주문 데이터는 사라집니다.</p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const currentYear = 2026;
+
+    const seats = [
+      { id: "B1", type: "바 좌석", used: false },
+      { id: "B2", type: "바 좌석", used: false },
+      { id: "T1", type: "테이블", used: true },
+      { id: "T2", type: "테이블", used: false },
+      { id: "S1", type: "스탠딩", used: false },
+      { id: "S2", type: "스탠딩", used: true }
+    ];
+
+    const menus = [
+      { id: 1, name: "하우스 와인", category: "와인", price: 9000, desc: "가볍게 마시기 좋은 레드 와인" },
+      { id: 2, name: "진토닉", category: "칵테일", price: 10000, desc: "진 + 토닉워터, 산뜻한 기본 칵테일" },
+      { id: 3, name: "모히또", category: "칵테일", price: 12000, desc: "럼, 라임, 민트가 들어간 청량한 칵테일" },
+      { id: 4, name: "생맥주", category: "맥주", price: 6000, desc: "시원한 기본 생맥주" },
+      { id: 5, name: "감자튀김", category: "안주", price: 8000, desc: "술과 잘 맞는 기본 안주" },
+      { id: 6, name: "치즈 플래터", category: "안주", price: 16000, desc: "와인과 잘 어울리는 치즈 모음" },
+      { id: 7, name: "논알콜 칵테일", category: "논알콜", price: 8000, desc: "술을 마시지 않는 손님을 위한 메뉴" }
+    ];
+
+    let user = { type: "비회원", id: null, verified: false };
+    let selectedSeat = null;
+    let selectedCategory = "전체";
+    let cart = [];
+    let orders = [];
+    let currentOrder = null;
+    let statusIndex = 0;
+
+    const statuses = ["주문 접수", "준비 중", "픽업/서빙 중", "완료"];
+
+    function go(screenId) {
+      document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+      document.getElementById(screenId).classList.add("active");
+
+      if (screenId === "seat") renderSeats();
+
+      if (screenId === "menu") {
+        renderCategories();
+        renderMenu();
+        renderCart();
+      }
+
+      if (screenId === "admin") {
+        renderAdminOrders();
+      }
+    }
+
+    function verifyAge() {
+      const year = Number(document.getElementById("birthYear").value);
+      const message = document.getElementById("ageMessage");
+
+      if (!year || year < 1900 || year > currentYear) {
+        message.textContent = "출생연도를 올바르게 입력해주세요.";
+        return;
+      }
+
+      const age = currentYear - year;
+
+      if (age >= 19) {
+        user.verified = true;
+        message.textContent = "성인 인증 완료. 다음 단계로 이동합니다.";
+        setTimeout(() => go("login"), 500);
+      } else {
+        message.textContent = "성인 인증 실패. 주류 주문이 불가능합니다.";
+      }
+    }
+
+    function login() {
+      const id = document.getElementById("loginId").value.trim();
+
+      if (!id) {
+        alert("휴대폰 번호 또는 이메일을 입력해주세요.");
+        return;
+      }
+
+      user.type = "회원";
+      user.id = id;
+      document.getElementById("sessionInfo").textContent = "회원: " + id;
+      go("seat");
+    }
+
+    function guestLogin() {
+      user.type = "비회원";
+      user.id = "guest";
+      document.getElementById("sessionInfo").textContent = "비회원 주문";
+      go("seat");
+    }
+
+    function renderSeats() {
+      const grid = document.getElementById("seatGrid");
+      grid.innerHTML = "";
+
+      seats.forEach(seat => {
+        const div = document.createElement("div");
+        div.className = "seat " + (seat.used ? "used" : "available");
+
+        if (selectedSeat === seat.id) {
+          div.classList.add("selected");
+        }
+
+        div.innerHTML =
+          "<h3>" + seat.id + "</h3>" +
+          "<p>" + seat.type + "</p>" +
+          "<p class='small'>" + (seat.used ? "사용 중" : "선택 가능") + "</p>";
+
+        if (!seat.used) {
+          div.onclick = () => {
+            selectedSeat = seat.id;
+            renderSeats();
+          };
+        }
+
+        grid.appendChild(div);
+      });
+    }
+
+    function confirmSeat() {
+      if (!selectedSeat) {
+        alert("좌석을 선택하거나 건너뛰기를 눌러주세요.");
+        return;
+      }
+
+      go("menu");
+    }
+
+    function renderCategories() {
+      const categories = ["전체", ...new Set(menus.map(m => m.category))];
+      const box = document.getElementById("categoryButtons");
+      box.innerHTML = "";
+
+      categories.forEach(cat => {
+        const btn = document.createElement("button");
+        btn.textContent = cat;
+        btn.className = cat === selectedCategory ? "" : "secondary";
+
+        btn.onclick = () => {
+          selectedCategory = cat;
+          renderCategories();
+          renderMenu();
+        };
+
+        box.appendChild(btn);
+      });
+    }
+
+    function renderMenu() {
+      const grid = document.getElementById("menuGrid");
+      grid.innerHTML = "";
+
+      const filtered = selectedCategory === "전체"
+        ? menus
+        : menus.filter(m => m.category === selectedCategory);
+
+      filtered.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "menu-item";
+
+        div.innerHTML =
+          "<h3>" + item.name + "</h3>" +
+          "<p class='sub'>" + item.desc + "</p>" +
+          "<p class='small'>카테고리: " + item.category + "</p>" +
+          "<div class='price'>" + item.price.toLocaleString() + "원</div>" +
+          "<button onclick='addToCart(" + item.id + ")'>담기</button>";
+
+        grid.appendChild(div);
+      });
+    }
+
+    function addToCart(id) {
+      const item = menus.find(m => m.id === id);
+      const existing = cart.find(c => c.id === id);
+
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({ ...item, qty: 1 });
+      }
+
+      renderCart();
+    }
+
+    function changeQty(id, delta) {
+      const item = cart.find(c => c.id === id);
+
+      if (!item) return;
+
+      item.qty += delta;
+
+      if (item.qty <= 0) {
+        cart = cart.filter(c => c.id !== id);
+      }
+
+      renderCart();
+    }
+
+    function removeCart(id) {
+      cart = cart.filter(c => c.id !== id);
+      renderCart();
+    }
+
+    function renderCart() {
+      const list = document.getElementById("cartList");
+      const totalBox = document.getElementById("cartTotal");
+      const checkoutBtn = document.getElementById("checkoutBtn");
+
+      list.innerHTML = "";
+
+      if (cart.length === 0) {
+        list.innerHTML = "<p class='sub'>아직 장바구니가 비어 있습니다.</p>";
+        totalBox.textContent = "총 0원";
+        checkoutBtn.disabled = true;
+        return;
+      }
+
+      cart.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "cart-row";
+
+        row.innerHTML =
+          "<div>" +
+            "<strong>" + item.name + "</strong>" +
+            "<div class='small'>" + item.price.toLocaleString() + "원 × " + item.qty + "</div>" +
+          "</div>" +
+          "<div>" +
+            "<button class='secondary' onclick='changeQty(" + item.id + ", -1)'>-</button>" +
+            "<button class='secondary' onclick='changeQty(" + item.id + ", 1)'>+</button>" +
+          "</div>" +
+          "<button class='danger' onclick='removeCart(" + item.id + ")'>삭제</button>";
+
+        list.appendChild(row);
+      });
+
+      const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+      totalBox.textContent = "총 " + total.toLocaleString() + "원";
+      checkoutBtn.disabled = false;
+    }
+
+    function pay() {
+      if (cart.length === 0) {
+        alert("장바구니가 비어 있습니다.");
+        return;
+      }
+
+      const method = document.getElementById("paymentMethod").value;
+      const orderId = "ORD-" + Math.floor(Math.random() * 90000 + 10000);
+
+      currentOrder = {
+        id: orderId,
+        seat: selectedSeat || "좌석 미선택",
+        items: cart.map(c => c.name + " " + c.qty + "개").join(", "),
+        status: statuses[0],
+        payment: method
+      };
+
+      orders.push(currentOrder);
+      statusIndex = 0;
+
+      document.getElementById("orderNumber").textContent =
+        "주문번호: " + currentOrder.id + " / 결제방식: " + method;
+
+      document.getElementById("orderStatus").textContent = statuses[statusIndex];
+
+      renderAdminOrders();
+      go("status");
+    }
+
+    function nextStatus() {
+      if (!currentOrder) return;
+
+      statusIndex = Math.min(statusIndex + 1, statuses.length - 1);
+      currentOrder.status = statuses[statusIndex];
+
+      document.getElementById("orderStatus").textContent = currentOrder.status;
+
+      renderAdminOrders();
+    }
+
+    function newOrder() {
+      cart = [];
+      selectedSeat = null;
+      currentOrder = null;
+      statusIndex = 0;
+
+      go("welcome");
+    }
+
+    function adminLogin() {
+      const pw = document.getElementById("adminPw").value;
+
+      if (pw !== "demo") {
+        alert("관리자 비밀번호는 demo 입니다.");
+        return;
+      }
+
+      document.getElementById("adminPanel").style.display = "block";
+      renderAdminOrders();
+    }
+
+    function renderAdminOrders() {
+      const tbody = document.getElementById("adminOrders");
+
+      if (!tbody) return;
+
+      tbody.innerHTML = "";
+
+      if (orders.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='4'>아직 주문이 없습니다.</td></tr>";
+        return;
+      }
+
+      orders.forEach(order => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML =
+          "<td>" + order.id + "</td>" +
+          "<td>" + order.seat + "</td>" +
+          "<td>" + order.items + "</td>" +
+          "<td>" + order.status + "</td>";
+
+        tbody.appendChild(tr);
+      });
+    }
+  </script>
+</body>
+</html>
